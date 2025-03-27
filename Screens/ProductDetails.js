@@ -45,25 +45,30 @@ const ProductDetails = ({ route }) => {
     if (isConfirmed) return; // Prevent duplicate confirmation
 
     try {
-      const orderRef = doc(firestore, 'notifications', `${customer.id}_${product.id}`);
-      const productRef = doc(firestore, 'production', product.id);
-      const confirmationDate = new Date();
+        const orderRef = doc(firestore, 'notifications', `${customer.id}_${product.id}`);
+        const productRef = doc(firestore, 'production', product.id);
+        const confirmationDate = new Date();
 
-      await setDoc(orderRef, {
-        confirmed: true,
-        confirmedAt: confirmationDate,
-        message: `Your order for ${product.productName} has been confirmed. It will be delivered within 4 days.`,
-        timestamp: confirmationDate,
-        status: 'Order Confirmed',
-      }, { merge: true });
+        // Update the notifications collection
+        await setDoc(orderRef, {
+            confirmed: true,
+            confirmedAt: confirmationDate,
+            message: `Your order for ${product.productName} has been confirmed. It will be delivered within 4 days.`,
+            timestamp: confirmationDate,
+            status: 'Order Confirmed',
+            productName: product.productName,
+            quantity: product.quantity,
+            farmerId: product.farmerId || null, // Assuming farmerId is part of the product data
+        }, { merge: true });
 
-      await updateDoc(productRef, { status: 'Delivery Approved' });
+        // Update the production collection
+        await updateDoc(productRef, { status: 'Delivery Approved' });
 
-      setIsConfirmed(true);
-      Alert.alert('Order Confirmed', 'The order has been confirmed and approved for delivery.');
+        setIsConfirmed(true);
+        Alert.alert('Order Confirmed', 'The order has been confirmed and approved for delivery.');
     } catch (error) {
-      console.error('Error confirming order:', error);
-      Alert.alert('Error', 'Failed to confirm the order. Please try again.');
+        console.error('Error confirming order:', error);
+        Alert.alert('Error', 'Failed to confirm the order. Please try again.');
     }
   };
 

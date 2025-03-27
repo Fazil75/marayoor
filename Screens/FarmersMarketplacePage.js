@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet, ActivityIndicator, Alert } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { collection, onSnapshot, getFirestore, doc, updateDoc } from 'firebase/firestore';
+import { collection, onSnapshot, getFirestore, doc, updateDoc, getDocs, getDoc } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import { firebaseApp } from './firebaseConfig';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -20,42 +20,83 @@ const FarmersMarketplace = () => {
     const user = auth.currentUser;
 
     if (!user) {
-      Alert.alert("Access Denied", "You must be logged in to view this page.");
-      setLoading(false);
-      return;
+        Alert.alert("Access Denied", "You must be logged in to view this page.");
+        setLoading(false);
+        return;
     }
 
-    const productsRef = collection(firestore, 'production');
-    const ordersRef = collection(firestore, 'orders');
+    const fetchOrderedProducts = async () => {
+        try {
+            const ordersRef = collection(firestore, 'orders');
+            const productsRef = collection(firestore, 'production');
+            const usersRef = collection(firestore, 'users'); // Assuming customer details are stored in 'users'
 
-    const unsubscribeProducts = onSnapshot(productsRef, (snapshot) => {
-      const productList = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setProducts(productList);
-    });
+            // Fetch all orders
+            const ordersSnapshot = await getDocs(ordersRef);
+            const orderedProductIds = new Set();
+            const ordersData = [];
 
-    const unsubscribeOrders = onSnapshot(ordersRef, (snapshot) => {
-      const orderData = {};
-      snapshot.docs.forEach((doc) => {
-        const order = doc.data();
-        if (order.productId) {
-          if (!orderData[order.productId]) {
-            orderData[order.productId] = 0;
-          }
-          orderData[order.productId] += order.quantity;
+            ordersSnapshot.forEach((doc) => {
+                const order = doc.data();
+                if (order.productId) {
+                    orderedProductIds.add(order.productId);
+                    ordersData.push({ id: doc.id, ...order });
+                }
+            });
+
+            // Fetch products that match the ordered product IDs
+            const productsSnapshot = await getDocs(productsRef);
+            const orderedProducts = productsSnapshot.docs
+                .filter((doc) => orderedProductIds.has(doc.id))
+                .map((doc) => ({
+                    id: doc.id,
+                    ...doc.data(),
+                }));
+
+            // Fetch customer details for each order
+            const customerDetails = {};
+            for (const order of ordersData) {
+                if (order.customerId && !customerDetails[order.customerId]) {
+                    const customerDoc = await getDoc(doc(usersRef, order.customerId));
+                    if (customerDoc.exists()) {
+                        customerDetails[order.customerId] = customerDoc.data();
+                    }
+                }
+            }
+
+            // Combine orders, products, and customer details
+            const combinedData = orderedProducts.map((product) => {
+                const productOrders = ordersData.filter((order) => order.productId === product.id);
+                const totalOrderedQuantity = productOrders.reduce((sum, order) => sum + order.quantity, 0);
+
+                const customerInfo = productOrders.map((order) => {
+                    const customer = customerDetails[order.customerId];
+                    return {
+                        customerName: customer?.username || 'Unknown',
+                        customerPhone: customer?.phone || 'N/A',
+                        customerAddress: customer?.address || 'N/A',
+                        orderedQuantity: order.quantity,
+                    };
+                });
+
+                return {
+                    ...product,
+                    totalOrderedQuantity,
+                    customerInfo,
+                };
+            });
+
+            setProducts(combinedData);
+        } catch (error) {
+            console.error("Error fetching ordered products:", error);
+            Alert.alert("Error", "Failed to fetch ordered products.");
+        } finally {
+            setLoading(false);
         }
-      });
-      setOrderedQuantities(orderData);
-      setLoading(false);
-    });
-
-    return () => {
-      unsubscribeProducts();
-      unsubscribeOrders();
     };
-  }, []);
+
+    fetchOrderedProducts();
+}, []);
 
   const updateOrderStatus = async (productId) => {
     try {
@@ -99,34 +140,29 @@ const FarmersMarketplace = () => {
         <FlatList
           data={products}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => {
-            const availableQuantity = (item.quantity || 0) - (orderedQuantities[item.id] || 0);
-            return (
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={styles.card}
+              onPress={() => navigation.navigate('ProductDetails', { product: item })}
+            >
+              <View style={styles.cardHeader}>
+                <Text style={styles.productName}>{item.productName || 'Unnamed Product'}</Text>
+                <MaterialIcons name="agriculture" size={24} color="#ffffff" />
+              </View>
+              <Text style={styles.productInfo}>💰 Price: ₹{item.price || 'N/A'}</Text>
+              <Text style={styles.productInfo}>📦 Quantity Available: {item.quantity || 0} kg</Text>
+              <Text style={styles.orderedQuantity}>🛒 Total Ordered: {item.totalOrderedQuantity || 0} kg</Text>
               <TouchableOpacity
-                style={styles.card}
-                onPress={() => navigation.navigate('ProductDetails', { product: item })}
+                style={[
+                  styles.statusBadge,
+                  { backgroundColor: item.status === 'Delivery Approved' ? '#28a745' : '#dc3545' },
+                ]}
+                onPress={() => updateOrderStatus(item.id)}
               >
-                <View style={styles.cardHeader}>
-                  <Text style={styles.productName}>{item.productName || 'Unnamed Product'}</Text>
-                  <MaterialIcons name="agriculture" size={24} color="#ffffff" />
-                </View>
-                <Text style={styles.productInfo}>💰 Price: ₹{item.price || 'N/A'}</Text>
-                <Text style={styles.productInfo}>📦 Quantity Available: {availableQuantity} kg</Text>
-                <Text style={styles.orderedQuantity}>
-                  🛒 Ordered: {orderedQuantities[item.id] || 0} kg
-                </Text>
-                <TouchableOpacity
-                  style={[
-                    styles.statusBadge,
-                    { backgroundColor: item.status === 'Delivery Approved' ? '#28a745' : '#dc3545' },
-                  ]}
-                  onPress={() => updateOrderStatus(item.id)}
-                >
-                  <Text style={styles.statusText}>{item.status || 'Pending Confirmation'}</Text>
-                </TouchableOpacity>
+                <Text style={styles.statusText}>{item.status || 'Pending Confirmation'}</Text>
               </TouchableOpacity>
-            );
-          }}
+            </TouchableOpacity>
+          )}
         />
       )}
     </LinearGradient>
@@ -137,7 +173,6 @@ const styles = StyleSheet.create({
   container: { flex: 1, padding: 20 },
   loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
   loadingText: { marginTop: 10, fontSize: 16, color: '#ffffff' },
-
   header: { 
     fontSize: 28, 
     fontWeight: 'bold', 
@@ -148,7 +183,6 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 1, height: 1 }, 
     textShadowRadius: 5 
   },
-  
   noDataText: { fontSize: 18, textAlign: 'center', color: '#ffffff' },
 
   navContainer: {

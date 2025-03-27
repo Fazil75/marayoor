@@ -16,62 +16,52 @@ const FarmersProductSellingScreen = ({ navigation }) => {
 
   const handleAddProduct = async () => {
     if (!productName.trim() || !price.trim() || !quantity.trim()) {
-      Alert.alert('Error', 'Please fill in all fields');
-      return;
+        Alert.alert('Error', 'Please fill in all fields');
+        return;
     }
 
     if (isNaN(price) || isNaN(quantity) || parseFloat(price) <= 0 || parseInt(quantity) <= 0) {
-      Alert.alert('Error', 'Price and quantity must be valid numbers');
-      return;
+        Alert.alert('Error', 'Price and quantity must be valid numbers');
+        return;
     }
 
     setLoading(true);
 
     try {
-      const auth = getAuth();
-      const user = auth.currentUser;
+        const auth = getAuth();
+        const user = auth.currentUser;
 
-      if (!user) {
-        Alert.alert('Error', 'You must be logged in to sell products');
-        setLoading(false);
-        return;
-      }
+        if (!user) {
+            Alert.alert('Error', 'You must be logged in to sell products');
+            setLoading(false);
+            return;
+        }
 
-      const farmerId = user.uid;
+        const farmerId = user.uid;
 
-      const productData = {
-        productName: productName.trim(),
-        price: parseFloat(price),
-        quantity: parseInt(quantity),
-        farmerId,
-        timestamp: serverTimestamp(),
-      };
+        const productData = {
+            productName: productName.trim(),
+            price: parseFloat(price),
+            quantity: parseInt(quantity),
+            farmerId,
+            timestamp: serverTimestamp(),
+        };
 
-      // ✅ Store product in the `production` collection
-      const productCollectionRef = collection(firestore, 'production');
-      const productDocRef = await addDoc(productCollectionRef, productData);
+        // ✅ Store product in the `production` collection
+        const productCollectionRef = collection(firestore, 'production');
+        await addDoc(productCollectionRef, productData);
 
-      // ✅ Store notification
-      const notificationsCollectionRef = collection(firestore, 'notifications');
-      await addDoc(notificationsCollectionRef, {
-        ...productData,
-        notificationId: productDocRef.id,
-        message: `New product added: ${productName.trim()}`,
-        confirmed: false,
-        notificationTimestamp: serverTimestamp(),
-      });
+        Alert.alert('Success', 'Product added successfully!', [
+            { text: 'OK', onPress: () => navigation.navigate('MyHomePage') },
+        ]);
 
-      Alert.alert('Success', 'Product added successfully!', [
-        { text: 'OK', onPress: () => navigation.navigate('MyHomePage') },
-      ]);
-
-      // Reset input fields
-      setProductName('');
-      setPrice('');
-      setQuantity('');
+        // Reset input fields
+        setProductName('');
+        setPrice('');
+        setQuantity('');
     } catch (error) {
-      console.error('Error adding product:', error);
-      Alert.alert('Error', `Failed to add product: ${error.message}`);
+        console.error('Error adding product:', error);
+        Alert.alert('Error', `Failed to add product: ${error.message}`);
     }
 
     setLoading(false);
